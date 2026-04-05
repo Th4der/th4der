@@ -1,0 +1,23 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "Windows",
+      "intelliSenseMode": "windows-msvc-x64",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "C:/flutter/bin/cache/artifacts/engine/windows-x64/cpp_client_wrapper/include",
+        "C:/flutter/bin/cache/artifacts/engine/windows-x64",
+        "C:/flutter/bin/cache/artifacts/engine/linux-x64"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}",
+          "C:/flutter/bin/cache/artifacts/engine/windows-x64/cpp_client_wrapper/include",
+          "C:/flutter/bin/cache/artifacts/engine/linux-x64"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ]
+}
