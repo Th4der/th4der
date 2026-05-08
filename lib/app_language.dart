@@ -87,9 +87,91 @@ class AppStrings {
 
   String get languageLabel => isRu ? 'Язык' : 'Language';
   String get selectLanguage => isRu ? 'Выберите язык' : 'Select language';
-  String get languageApplied =>
-      isRu ? 'Язык интерфейса изменен' : 'Language was updated';
+  String get languageApplied => isRu ? 'Язык обновлён' : 'Language was updated';
+  String get profileSettings => isRu ? 'Настройки профиля' : 'Profile settings';
+  String get saveChanges => isRu ? 'Сохранить' : 'Save changes';
+  String get cancel => isRu ? 'Отмена' : 'Cancel';
+  String get newPassword => isRu ? 'Новый пароль' : 'New password';
+  String get confirmPassword => isRu ? 'Повторите пароль' : 'Confirm password';
+  String get passwordTooShort => isRu
+      ? 'Пароль должен быть не меньше 6 символов.'
+      : 'Password must be at least 6 characters.';
+  String get passwordsDoNotMatch =>
+      isRu ? 'Пароли не совпадают.' : 'Passwords do not match.';
+  String get profileUpdated => isRu ? 'Профиль обновлен' : 'Profile updated';
+  String get profileUpdateFailed =>
+      isRu ? 'Не удалось обновить профиль' : 'Failed to update profile';
 
   String get typeMessage => isRu ? 'Введите сообщение' : 'Type a message';
   String get sending => isRu ? 'Отправка...' : 'Sending...';
+  String get startCall => isRu ? 'Начать звонок' : 'Start call';
+  String get callInvite => isRu ? 'Приглашение в звонок' : 'Call invite';
+  String get joinCall => isRu ? 'Присоединиться' : 'Join call';
+  String get callOpenFailed =>
+      isRu ? 'Не удалось открыть звонок' : 'Could not open call';
+  String get callSendFailed => isRu
+      ? 'Не удалось отправить приглашение в звонок'
+      : 'Failed to send call invite';
+
+  String get incomingCallTitle => isRu ? 'Входящий звонок' : 'Incoming call';
+  String incomingCallFrom(String callerName) =>
+      isRu ? '$callerName звонит вам' : '$callerName is calling you';
+  String get decline => isRu ? 'Отклонить' : 'Decline';
+  String get accept => isRu ? 'Принять' : 'Accept';
+
+  String get unknownUser => isRu ? 'Неизвестный пользователь' : 'Unknown user';
+  String get unknownUsername => isRu ? 'неизвестно' : 'unknown';
+  String get unknownContact => isRu ? 'Контакт' : 'Contact';
+
+  String get sendPhotoFailed =>
+      isRu ? 'Не удалось отправить фото' : 'Failed to send photo';
+  String get photoUnavailable =>
+      isRu ? '[Фото недоступно]' : '[Photo unavailable]';
+  String get deleteMessageTitle =>
+      isRu ? 'Удалить сообщение?' : 'Delete message?';
+  String get deleteMessageBody =>
+      isRu ? 'Это действие нельзя отменить.' : 'This action cannot be undone.';
+  String get delete => isRu ? 'Удалить' : 'Delete';
+  String get deleteMessageFailed =>
+      isRu ? 'Не удалось удалить сообщение' : 'Failed to delete message';
+  String get failedToJoinActiveCall => isRu
+      ? 'Не удалось присоединиться к активному звонку'
+      : 'Failed to join active call';
+  String get callNotActiveYet =>
+      isRu ? 'Звонок еще не активен' : 'Call is not active yet';
+  String get failedToStartCall =>
+      isRu ? 'Не удалось начать звонок' : 'Failed to start call';
+
+  String get callInitializing => isRu ? 'Инициализация...' : 'Initializing...';
+
+  String callStatusText(String status) {
+    switch (status) {
+      case 'Connecting...':
+        return isRu ? 'Подключение...' : 'Connecting...';
+      case 'Connected':
+        return isRu ? 'Подключено' : 'Connected';
+      case 'Signal reconnecting...':
+        return isRu ? 'Переподключение сигнала...' : 'Signal reconnecting...';
+      case 'Signal error':
+        return isRu ? 'Ошибка сигнала' : 'Signal error';
+      case 'Waiting for caller...':
+        return isRu ? 'Ожидание звонящего...' : 'Waiting for caller...';
+      case 'Failed to initialize call':
+        return isRu
+            ? 'Не удалось инициализировать звонок'
+            : 'Failed to initialize call';
+      case 'Connection failed':
+        return isRu ? 'Не удалось подключиться' : 'Connection failed';
+      case 'Disconnected':
+        return isRu ? 'Отключено' : 'Disconnected';
+      case 'ICE failed':
+        return isRu ? 'Ошибка ICE' : 'ICE failed';
+      case 'Ringing...':
+        return isRu ? 'Вызов...' : 'Ringing...';
+      case 'Negotiation retry...':
+        return isRu ? 'Повтор согласования...' : 'Negotiation retry...';
+      default:
+        return status;
+    }
+  }
 }

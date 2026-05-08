@@ -1,0 +1,19 @@
+[Unit]
+Description=Th4der Messenger API (Flask + Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=th4der
+Group=www-data
+WorkingDirectory=/opt/th4der/server
+EnvironmentFile=/opt/th4der/server/.env
+ExecStart=/opt/th4der/server/.venv/bin/gunicorn -c /opt/th4der/server/gunicorn.conf.py wsgi:app
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+

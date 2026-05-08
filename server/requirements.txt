@@ -1,3 +1,5 @@
 Flask>=3.1,<4.0
+flask-sock>=0.7,<1.0
 SQLAlchemy>=2.0,<3.0
 PyJWT>=2.8,<3.0
+aiortc>=1.9,<2.0

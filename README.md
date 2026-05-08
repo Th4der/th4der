@@ -51,3 +51,20 @@ Run a second client as another user (second device/emulator):
 ```bash
 flutter run --dart-define API_BASE_URL=http://<YOUR_PC_IP>:8000
 ```
+
+## Calls (WebRTC)
+
+- Open any direct chat and tap the phone icon in the chat header.
+- Incoming call appears as a dialog on the other device.
+- Audio/video stream is inside the app via WebRTC signaling through the Python API.
+- Default ICE config uses public STUN/TURN (`stun.l.google.com` + `openrelay.metered.ca`).
+- For stable production calls, pass your own TURN credentials:
+
+```bash
+flutter run ^
+  --dart-define API_BASE_URL=http://<YOUR_PC_IP>:8000 ^
+  --dart-define WEBRTC_TURN_URL=turn:your-turn-host:3478?transport=udp ^
+  --dart-define WEBRTC_TURN_USERNAME=<TURN_USER> ^
+  --dart-define WEBRTC_TURN_CREDENTIAL=<TURN_PASSWORD> ^
+  --dart-define WEBRTC_FORCE_RELAY=true
+```
