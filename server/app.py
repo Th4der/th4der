@@ -86,8 +86,8 @@ ONLINE_WINDOW_SECONDS = int(os.getenv("TH4DER_ONLINE_WINDOW_SECONDS", "20"))
 CALL_RINGING_STALE_SECONDS = int(os.getenv("TH4DER_CALL_RINGING_STALE_SECONDS", "45"))
 CALL_ACTIVE_STALE_SECONDS = int(os.getenv("TH4DER_CALL_ACTIVE_STALE_SECONDS", "120"))
 CALL_DEBUG_LOGGING = os.getenv("TH4DER_CALL_DEBUG_LOGGING", "0") == "1"
-MAX_MESSAGE_IMAGE_BYTES = int(os.getenv("TH4DER_MAX_MESSAGE_IMAGE_BYTES", str(5 * 1024 * 1024)))
-MAX_MESSAGE_FILE_BYTES = int(os.getenv("TH4DER_MAX_MESSAGE_FILE_BYTES", str(150 * 1024 * 1024)))
+MAX_MESSAGE_IMAGE_BYTES = int(os.getenv("TH4DER_MAX_MESSAGE_IMAGE_BYTES", str(15 * 1024 * 1024)))
+MAX_MESSAGE_FILE_BYTES = int(os.getenv("TH4DER_MAX_MESSAGE_FILE_BYTES", str(90 * 1024 * 1024)))
 
 if IS_SQLITE_DB:
     engine = create_engine(
@@ -463,7 +463,18 @@ def _conversation_summary(session, conversation: Conversation, viewer_id: int) -
     if other_user is None:
         raise ValueError("User not found")
 
-    last_message = conversation.messages[-1] if conversation.messages else None
+    last_message_row = (
+        session.query(
+            Message.text,
+            Message.file_name,
+            func.length(Message.image_base64),
+            func.length(Message.file_base64),
+        )
+        .filter(Message.conversation_id == conversation.id)
+        .order_by(Message.id.desc())
+        .limit(1)
+        .one_or_none()
+    )
     last_read_id = viewer_participant.last_read_message_id or 0
     unread_count = (
         session.query(func.count(Message.id))
@@ -476,17 +487,25 @@ def _conversation_summary(session, conversation: Conversation, viewer_id: int) -
         or 0
     )
 
-    if last_message is None:
+    if last_message_row is None:
         last_message_text = ""
-    elif (last_message.text or "").strip():
-        last_message_text = last_message.text
-    elif (last_message.image_base64 or "").strip():
-        last_message_text = "[Photo]"
-    elif (last_message.file_base64 or "").strip():
-        file_name = (last_message.file_name or "").strip()
-        last_message_text = f"[File] {file_name}" if file_name else "[File]"
     else:
-        last_message_text = ""
+        last_message_text_raw = str(last_message_row[0] or "").strip()
+        last_message_file_name = str(last_message_row[1] or "").strip()
+        has_image = (last_message_row[2] or 0) > 0
+        has_file = (last_message_row[3] or 0) > 0
+        if last_message_text_raw:
+            last_message_text = last_message_text_raw
+        elif has_image:
+            last_message_text = "[Photo]"
+        elif has_file:
+            last_message_text = (
+                f"[File] {last_message_file_name}"
+                if last_message_file_name
+                else "[File]"
+            )
+        else:
+            last_message_text = ""
 
     return {
         "id": str(conversation.id),
@@ -1575,6 +1594,15 @@ def get_messages(conversation_id: str) -> Any:
     except ValueError:
         return jsonify({"error": "conversation_id must be numeric"}), 400
 
+    since_id = _parse_user_id(request.args.get("since_id"), default=0)
+    if since_id < 0:
+        since_id = 0
+
+    requested_limit = _parse_user_id(request.args.get("limit"), default=0)
+    if requested_limit <= 0:
+        requested_limit = 80 if since_id <= 0 else 200
+    limit = max(1, min(requested_limit, 400))
+
     with SessionLocal() as session:
         viewer = _resolve_request_user(session, default=1)
         if viewer is None:
@@ -1585,12 +1613,35 @@ def get_messages(conversation_id: str) -> Any:
         if conversation is None:
             return jsonify({"error": "Conversation not found for this user"}), 404
 
-        messages = (
-            session.query(Message)
-            .filter(Message.conversation_id == conversation_int_id)
-            .order_by(Message.id.asc())
-            .all()
-        )
+        if since_id > 0:
+            messages = (
+                session.query(Message)
+                .filter(
+                    Message.conversation_id == conversation_int_id,
+                    Message.id > since_id,
+                )
+                .order_by(Message.id.asc())
+                .limit(limit)
+                .all()
+            )
+            has_more = len(messages) >= limit
+        else:
+            # Initial page: return only the latest `limit` messages.
+            latest_chunk = (
+                session.query(Message)
+                .filter(Message.conversation_id == conversation_int_id)
+                .order_by(Message.id.desc())
+                .limit(limit)
+                .all()
+            )
+            messages = list(reversed(latest_chunk))
+            has_more = (
+                session.query(func.count(Message.id))
+                .filter(Message.conversation_id == conversation_int_id)
+                .scalar()
+                or 0
+            ) > len(messages)
+
         peer_last_read_id = 0
         for participant in conversation.participants:
             if participant.user_id != viewer_id:
@@ -1600,7 +1651,15 @@ def get_messages(conversation_id: str) -> Any:
             _message_payload(message, viewer_id, peer_last_read_id=peer_last_read_id)
             for message in messages
         ]
-    return jsonify({"conversation_id": conversation_id, "messages": payload})
+        last_message_id = messages[-1].id if messages else since_id
+    return jsonify(
+        {
+            "conversation_id": conversation_id,
+            "messages": payload,
+            "has_more": bool(has_more),
+            "last_message_id": int(last_message_id),
+        }
+    )
 
 
 @app.route("/api/conversations/<conversation_id>/messages", methods=["POST", "OPTIONS"])
