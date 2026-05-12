@@ -18,7 +18,7 @@ import 'chat_api.dart';
 
 const String _defaultApiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://192.168.1.8:8000',
+  defaultValue: 'http://168.222.143.16:8000',
 );
 const String _webrtcStunUrls = String.fromEnvironment(
   'WEBRTC_STUN_URLS',
@@ -653,11 +653,15 @@ class ChatHomeScreen extends StatefulWidget {
   State<ChatHomeScreen> createState() => _ChatHomeScreenState();
 }
 
-class _ChatHomeScreenState extends State<ChatHomeScreen> {
+class _ChatHomeScreenState extends State<ChatHomeScreen>
+    with WidgetsBindingObserver {
   final _search = TextEditingController();
   final List<ConversationSummary> _conversations = [];
+  static const Duration _homePollInterval = Duration(seconds: 5);
   Timer? _pollTimer;
+  bool _homePollingInFlight = false;
   bool _incomingCallDialogOpen = false;
+  bool _incomingCallsPollingInFlight = false;
   final Set<String> _handledIncomingCallIds = <String>{};
   bool _loading = true;
   bool _profileLoading = false;
@@ -675,11 +679,13 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _currentUser = widget.initialUser;
     _load();
     _loadCurrentUser(quiet: true);
     unawaited(_checkIncomingCalls());
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    _pollTimer = Timer.periodic(_homePollInterval, (_) {
+      if (!_isForegroundLifecycleState) return;
       unawaited(_load(quiet: true));
       unawaited(_checkIncomingCalls());
     });
@@ -687,9 +693,24 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _search.dispose();
     super.dispose();
+  }
+
+  bool _isForegroundLifecycleState = true;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final foreground =
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
+    _isForegroundLifecycleState = foreground;
+    if (foreground) {
+      unawaited(_load(quiet: true));
+      unawaited(_checkIncomingCalls());
+    }
   }
 
   Future<void> _refreshAll() async {
@@ -697,7 +718,8 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   }
 
   Future<void> _checkIncomingCalls() async {
-    if (_incomingCallDialogOpen) return;
+    if (_incomingCallDialogOpen || _incomingCallsPollingInFlight) return;
+    _incomingCallsPollingInFlight = true;
     try {
       final s = AppStrings(widget.language);
       final calls = await widget.api.fetchIncomingCalls();
@@ -766,6 +788,8 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
       unawaited(_load(quiet: true));
     } catch (_) {
       _incomingCallDialogOpen = false;
+    } finally {
+      _incomingCallsPollingInFlight = false;
     }
   }
 
@@ -1038,6 +1062,8 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
   }
 
   Future<void> _load({bool quiet = false}) async {
+    if (_homePollingInFlight) return;
+    _homePollingInFlight = true;
     if (!quiet) setState(() => _loading = true);
     try {
       final items = await widget.api.fetchConversations();
@@ -1055,6 +1081,8 @@ class _ChatHomeScreenState extends State<ChatHomeScreen> {
         _loading = false;
         _error = e.toString();
       });
+    } finally {
+      _homePollingInFlight = false;
     }
   }
 
@@ -2095,18 +2123,27 @@ class ConversationScreen extends StatefulWidget {
   State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
-class _ConversationScreenState extends State<ConversationScreen> {
+class _ConversationScreenState extends State<ConversationScreen>
+    with WidgetsBindingObserver {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   static final RegExp _linkRegExp = RegExp(
     r'(https?:\/\/[^\s]+)',
     caseSensitive: false,
   );
+  static const Duration _messagesPollInterval = Duration(seconds: 4);
+  static const int _initialMessagesLimit = 80;
+  static const int _incrementalMessagesLimit = 200;
   static const int _maxAttachmentBytes = 15 * 1024 * 1024;
   final Map<String, ({String source, Uint8List? bytes})> _decodedMessageImages =
       <String, ({String source, Uint8List? bytes})>{};
   List<ChatMessage> _messages = [];
   Timer? _pollTimer;
+  bool _isForegroundLifecycleState = true;
+  bool _messagesPollingInFlight = false;
+  bool _initialBatchLoaded = false;
+  int _lastFetchedMessageId = 0;
+  int _lastReadAcknowledgedMessageId = 0;
   bool _loading = true;
   bool _sending = false;
   bool _sendingCall = false;
@@ -2116,16 +2153,17 @@ class _ConversationScreenState extends State<ConversationScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
-    unawaited(widget.api.markRead(widget.conversation.id));
-    _pollTimer = Timer.periodic(
-      const Duration(seconds: 2),
-      (_) => _load(quiet: true),
-    );
+    _pollTimer = Timer.periodic(_messagesPollInterval, (_) {
+      if (!_isForegroundLifecycleState) return;
+      unawaited(_load(quiet: true, incremental: true));
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _decodedMessageImages.clear();
     _input.dispose();
@@ -2133,7 +2171,46 @@ class _ConversationScreenState extends State<ConversationScreen> {
     super.dispose();
   }
 
-  Future<void> _load({bool quiet = false}) async {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final foreground =
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
+    _isForegroundLifecycleState = foreground;
+    if (foreground) {
+      unawaited(_load(quiet: true, incremental: true));
+    }
+  }
+
+  int _messageNumericId(ChatMessage message) => int.tryParse(message.id) ?? 0;
+
+  Future<void> _markReadIfNeeded(List<ChatMessage> messages) async {
+    int latestIncomingId = 0;
+    for (final message in messages) {
+      if (message.sender == 'contact') {
+        final id = _messageNumericId(message);
+        if (id > latestIncomingId) {
+          latestIncomingId = id;
+        }
+      }
+    }
+    if (latestIncomingId <= 0 ||
+        latestIncomingId <= _lastReadAcknowledgedMessageId) {
+      return;
+    }
+    try {
+      final conversation = await widget.api.markRead(widget.conversation.id);
+      if (!mounted) return;
+      _lastReadAcknowledgedMessageId = latestIncomingId;
+      widget.onConversationChanged(conversation);
+    } catch (_) {
+      // Ignore network hiccups; next cycle will retry if still needed.
+    }
+  }
+
+  Future<void> _load({bool quiet = false, bool incremental = false}) async {
+    if (_messagesPollingInFlight) return;
+    _messagesPollingInFlight = true;
     if (!quiet) {
       setState(() {
         _loading = true;
@@ -2141,13 +2218,33 @@ class _ConversationScreenState extends State<ConversationScreen> {
       });
     }
     try {
-      final remote = await widget.api.fetchMessages(widget.conversation.id);
+      final useIncremental = incremental && _initialBatchLoaded;
+      final remote = await widget.api.fetchMessages(
+        widget.conversation.id,
+        sinceMessageId: useIncremental ? _lastFetchedMessageId : null,
+        limit: useIncremental
+            ? _incrementalMessagesLimit
+            : _initialMessagesLimit,
+      );
       if (!mounted) return;
       final pending = _messages.where((m) => m.pending).toList();
+      final existingById = <String, ChatMessage>{
+        for (final msg in _messages.where((m) => !m.pending)) msg.id: msg,
+      };
+      for (final msg in remote) {
+        existingById[msg.id] = msg;
+      }
       final merged = [
-        ...remote,
-        ...pending.where((p) => remote.every((r) => r.id != p.id)),
+        ...existingById.values,
+        ...pending.where((p) => !existingById.containsKey(p.id)),
       ]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      for (final message in merged) {
+        final id = _messageNumericId(message);
+        if (id > _lastFetchedMessageId) {
+          _lastFetchedMessageId = id;
+        }
+      }
+      _initialBatchLoaded = true;
       final changed = !_areMessagesEquivalent(_messages, merged);
       if (changed || _loading || _error != null) {
         _syncImageCacheWithMessages(merged);
@@ -2162,13 +2259,15 @@ class _ConversationScreenState extends State<ConversationScreen> {
           _scrollToBottom();
         }
       }
-      unawaited(widget.api.markRead(widget.conversation.id));
+      unawaited(_markReadIfNeeded(merged));
     } catch (e) {
       if (!mounted || quiet) return;
       setState(() {
         _loading = false;
         _error = e.toString();
       });
+    } finally {
+      _messagesPollingInFlight = false;
     }
   }
 
@@ -2291,6 +2390,13 @@ class _ConversationScreenState extends State<ConversationScreen> {
       final ids = base.map((e) => e.id).toSet();
       base.addAll(result.messages.where((m) => !ids.contains(m.id)));
       base.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      for (final message in base) {
+        final id = _messageNumericId(message);
+        if (id > _lastFetchedMessageId) {
+          _lastFetchedMessageId = id;
+        }
+      }
+      _initialBatchLoaded = true;
       setState(() {
         _messages = base;
         _sending = false;

@@ -377,7 +377,11 @@ abstract interface class ChatApi {
 
   Future<List<ConversationSummary>> fetchConversations();
 
-  Future<List<ChatMessage>> fetchMessages(String conversationId);
+  Future<List<ChatMessage>> fetchMessages(
+    String conversationId, {
+    int? sinceMessageId,
+    int? limit,
+  });
 
   Future<SendMessageResult> sendMessage({
     required String conversationId,
@@ -507,11 +511,20 @@ class HttpChatApi implements ChatApi {
   }
 
   @override
-  Future<List<ChatMessage>> fetchMessages(String conversationId) async {
+  Future<List<ChatMessage>> fetchMessages(
+    String conversationId, {
+    int? sinceMessageId,
+    int? limit,
+  }) async {
+    final query = <String, String>{'user_id': '$currentUserId'};
+    if (sinceMessageId != null && sinceMessageId > 0) {
+      query['since_id'] = '$sinceMessageId';
+    }
+    if (limit != null && limit > 0) {
+      query['limit'] = '$limit';
+    }
     final response = await _client.get(
-      _uri('/api/conversations/$conversationId/messages', {
-        'user_id': '$currentUserId',
-      }),
+      _uri('/api/conversations/$conversationId/messages', query),
       headers: _headers(),
     );
     _ensureSuccess(response);
@@ -982,9 +995,30 @@ class DemoChatApi implements ChatApi {
   }
 
   @override
-  Future<List<ChatMessage>> fetchMessages(String conversationId) async {
+  Future<List<ChatMessage>> fetchMessages(
+    String conversationId, {
+    int? sinceMessageId,
+    int? limit,
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 80));
-    return [...(_messages[conversationId] ?? const <ChatMessage>[])];
+    final all = [...(_messages[conversationId] ?? const <ChatMessage>[])];
+    final since = sinceMessageId ?? 0;
+    final safeLimit = (limit == null || limit <= 0) ? null : limit;
+    if (since > 0) {
+      final filtered = all.where((item) {
+        final id = int.tryParse(item.id) ?? 0;
+        return id > since;
+      }).toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      if (safeLimit == null || filtered.length <= safeLimit) {
+        return filtered;
+      }
+      return filtered.sublist(0, safeLimit);
+    }
+    all.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    if (safeLimit == null || all.length <= safeLimit) {
+      return all;
+    }
+    return all.sublist(all.length - safeLimit);
   }
 
   @override
